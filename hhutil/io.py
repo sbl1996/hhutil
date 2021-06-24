@@ -4,10 +4,13 @@ import sys
 import stat
 import json
 import shutil
+import zipfile
 import importlib.util
 from pathlib import Path
 from typing import Callable, Any, Union, Sequence
 from datetime import datetime, timedelta
+
+import requests
 
 PathLike = Union[str, Path]
 
@@ -19,6 +22,15 @@ def read_lines(fp: PathLike):
 def write_lines(lines: Sequence[str], fp: PathLike):
     fmt_path(fp).write_text(os.linesep.join(lines))
     return fp
+
+
+def write_text(text: str, fp: PathLike):
+    fmt_path(fp).write_text(text)
+    return fp
+
+
+def read_text(fp):
+    return fmt_path(fp).read_text()
 
 
 def read_pickle(fp: PathLike):
@@ -117,12 +129,31 @@ def time_now():
     return now
 
 
-def read_text(fp):
-    return fmt_path(fp).read_text()
-
-
 def parse_python_config(fp: PathLike):
     spec = importlib.util.spec_from_file_location("config", fp)
     cfg = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cfg)
     return cfg
+
+
+def zip_files(fps, dst):
+    zf = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
+    for fp in fps:
+        fp = fmt_path(fp)
+        zf.write(str(fp), fp.name)
+    zf.close()
+
+
+def zip_dir(fp, dst):
+    fp = fmt_path(fp)
+    dst = fmt_path(dst)
+    base_name = dst.parent / dst.stem
+    shutil.make_archive(base_name, 'zip', fp)
+
+
+def download_file(url, dst):
+    with requests.get(url, stream=True) as r:
+        r.raw.decode_content = True
+        with open(dst, 'wb') as f:
+            shutil.copyfileobj(r.raw, f)
+    return dst
