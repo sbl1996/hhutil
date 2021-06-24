@@ -4,7 +4,8 @@ import sys
 import stat
 import json
 import shutil
-import zipfile
+import tempfile
+from zipfile import ZipFile, ZIP_DEFLATED
 import importlib.util
 from pathlib import Path
 from typing import Callable, Any, Union, Sequence
@@ -137,7 +138,7 @@ def parse_python_config(fp: PathLike):
 
 
 def zip_files(fps, dst):
-    zf = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
+    zf = ZipFile(dst, "w", ZIP_DEFLATED)
     for fp in fps:
         fp = fmt_path(fp)
         zf.write(str(fp), fp.name)
@@ -151,9 +152,24 @@ def zip_dir(fp, dst):
     shutil.make_archive(base_name, 'zip', fp)
 
 
+def unzip(fp, dst):
+    with ZipFile(fp, 'r') as f:
+        f.extractall(dst)
+
+
 def download_file(url, dst):
-    with requests.get(url, stream=True) as r:
-        r.raw.decode_content = True
-        with open(dst, 'wb') as f:
+    dst_dir = fmt_path(dst).parent
+    f = tempfile.NamedTemporaryFile(delete=False, dir=dst_dir)
+    try:
+        with requests.get(url, stream=True) as r:
+            r.raw.decode_content = True
             shutil.copyfileobj(r.raw, f)
+        f.close()
+        shutil.move(f.name, dst)
+    finally:
+        f.close()
+        if os.path.exists(f.name):
+            os.remove(f.name)
     return dst
+
+
