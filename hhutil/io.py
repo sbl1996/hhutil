@@ -6,7 +6,7 @@ import stat
 import json
 import shutil
 import tempfile
-from zipfile import ZipFile, ZIP_DEFLATED
+import zipfile
 import importlib.util
 from pathlib import Path
 from typing import Callable, Any, Union, Sequence
@@ -138,11 +138,38 @@ def parse_python_config(fp: PathLike):
     return cfg
 
 
-def zip_files(fps, dst):
-    zf = ZipFile(dst, "w", ZIP_DEFLATED)
+def _zip_add_directory(zip_file, path, zip_path):
+    for item in sorted(os.listdir(path)):
+        current_path = os.path.join(path, item)
+        current_zip_path = os.path.join(zip_path, item)
+        if os.path.isfile(current_path):
+            _zip_add_file(zip_file, current_path, current_zip_path)
+        else:
+            _zip_add_directory(zip_file, current_path, current_zip_path)
+
+
+def _zip_add_file(zip_file, path, zip_path=None):
+    permission = 0o555 if os.access(path, os.X_OK) else 0o444
+    zip_info = zipfile.ZipInfo.from_file(path, zip_path)
+    zip_info.date_time = (2019, 1, 1, 0, 0, 0)
+    zip_info.external_attr = (stat.S_IFREG | permission) << 16
+    with open(path, "rb") as fp:
+        zip_file.writestr(
+            zip_info,
+            fp.read(),
+            compress_type=zipfile.ZIP_DEFLATED,
+            compresslevel=9,
+        )
+
+
+def zip_files(fps, dst, deterministic=False):
+    zf = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
     for fp in fps:
         fp = fmt_path(fp)
-        zf.write(str(fp), fp.name)
+        if deterministic:
+            _zip_add_file(zf, str(fp), fp.name)
+        else:
+            zf.write(str(fp), fp.name)
     zf.close()
 
 
@@ -154,19 +181,45 @@ def zip_dir(fp, dst):
 
 
 def unzip(fp, dst):
-    with ZipFile(fp, 'r') as f:
+    with zipfile.ZipFile(fp, 'r') as f:
         f.extractall(dst)
 
 
+def _parse_response_filename(rep):
+    s = rep.headers['Content-Disposition']
+    key = "filename="
+    p = s.find(key)
+    if p == -1:
+        return None
+    p = p + len(key)
+    filename = s[p:]
+    if filename[0] == '"' and filename[-1] == '"':
+        filename = filename[1:-1]
+    return filename
+
+
 def download_file(url, dst, headers=None):
-    dst_dir = fmt_path(dst).parent
+    dst = fmt_path(dst)
+    if dst.exists() and dst.is_dir():
+        dst_dir = dst
+        filename = None
+    else:
+        dst_dir = dst.parent
+        filename = dst.name
     f = tempfile.NamedTemporaryFile(delete=False, dir=dst_dir)
     try:
         with requests.get(url, stream=True, headers=headers) as r:
             r.raw.decode_content = True
             shutil.copyfileobj(r.raw, f)
+            if filename is None:
+                filename = _parse_response_filename(r)
         f.close()
-        shutil.move(f.name, dst)
+        if filename is not None:
+            dst = dst_dir / filename
+            shutil.move(f.name, dst)
+        else:
+            # Can't parse filename and target is dir, use temp file name
+            pass
     finally:
         f.close()
         if os.path.exists(f.name):
@@ -194,3 +247,18 @@ def download_github_private_assert(url, dst, access_token):
         "Accept": "application/octet-stream"
     }
     return download_file(download_url, dst, headers=headers)
+
+
+def get_onedrive_download_url(share_url):
+    p = r"https://1drv\.ms/u/s!([0-9a-zA-Z-_]{28})\?e=[0-9a-zA-Z-_]{6}"
+    m = re.match(p, share_url)
+    if m is None:
+        raise ValueError("Error share url: %s" % share_url)
+    share_id = m.group(1)
+    download_url = f"https://api.onedrive.com/v1.0/shares/s!{share_id}/root/content"
+    return download_url
+
+
+def download_from_onedrive(share_url, dst):
+    download_url = get_onedrive_download_url(share_url)
+    return download_file(download_url, dst)
