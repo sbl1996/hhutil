@@ -1,4 +1,5 @@
 import os
+import re
 import pickle
 import sys
 import stat
@@ -157,11 +158,11 @@ def unzip(fp, dst):
         f.extractall(dst)
 
 
-def download_file(url, dst):
+def download_file(url, dst, headers=None):
     dst_dir = fmt_path(dst).parent
     f = tempfile.NamedTemporaryFile(delete=False, dir=dst_dir)
     try:
-        with requests.get(url, stream=True) as r:
+        with requests.get(url, stream=True, headers=headers) as r:
             r.raw.decode_content = True
             shutil.copyfileobj(r.raw, f)
         f.close()
@@ -173,3 +174,23 @@ def download_file(url, dst):
     return dst
 
 
+def download_github_private_assert(url, dst, access_token):
+    p = r"https://github.com/([a-zA-Z0-9]+)/([a-z0-9A-Z-_]+)/releases/download/([0-9\.]+)/(.*)"
+    m = re.match(p, url)
+    assert m is not None and len(m.groups()) == 4
+    repo = m.group(1) + "/" + m.group(2)
+    tag = m.group(3)
+    file = m.group(4)
+    query_url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    headers = {
+        "Authorization": f"token {access_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    req = requests.get(query_url, headers=headers)
+    asset_id = next(filter(lambda a: a['name'] == file, req.json()['assets']))['id']
+    download_url = f"https://api.github.com/repos/{repo}/releases/assets/{asset_id}"
+    headers = {
+        "Authorization": f"token {access_token}",
+        "Accept": "application/octet-stream"
+    }
+    return download_file(download_url, dst, headers=headers)
