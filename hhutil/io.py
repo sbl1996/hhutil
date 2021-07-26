@@ -81,6 +81,15 @@ def eglob(fp: PathLike, pattern: str):
             yield f
 
 
+def rglob(dir: PathLike, pattern: str):
+    pattern = re.compile(pattern)
+    dir = fmt_path(dir)
+    assert dir.exists() and dir.is_dir()
+    for f in dir.iterdir():
+        if not f.is_dir() and pattern.match(f.name):
+            yield f
+
+
 def apply_dir(dir: PathLike, f: Callable[[PathLike], Any], suffix=None, recursive=True) -> None:
     dir = fmt_path(dir)
     for fp in dir.iterdir():
