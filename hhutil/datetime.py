@@ -16,7 +16,7 @@ def format_datetime(dt: datetime):
 
 def datetime_now(format=False):
     dt = datetime.now(tz=pytz.timezone("Asia/Shanghai"))
-    dt = dt.replace(tzinfo=None, microsecond=0)
+    dt = dt.replace(tzinfo=None)
     if format:
         dt = format_datetime(dt)
     return dt
