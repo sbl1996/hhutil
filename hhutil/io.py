@@ -237,7 +237,7 @@ def download_file(url, dst, headers=None):
 
 
 def download_github_private_assert(url, dst, access_token):
-    p = r"https://github.com/([a-zA-Z0-9]+)/([a-z0-9A-Z-_]+)/releases/download/([0-9\.]+)/(.*)"
+    p = r"https://github.com/([a-zA-Z0-9]+)/([a-z0-9A-Z-_]+)/releases/download/([a-zA-Z0-9\.]+)/(.*)"
     m = re.match(p, url)
     assert m is not None and len(m.groups()) == 4
     repo = m.group(1) + "/" + m.group(2)
